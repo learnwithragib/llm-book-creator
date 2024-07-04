@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+
+{% block title %}Groqbook: Write Full Books using LLaMa3 on Groq{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1>📚 Groqbook: Write Full Books using LLaMa3 on Groq</h1>
+    
+    <div class="book-form">
+        <textarea id="topic" placeholder="What do you want the book to be about?" rows="4"></textarea>
+        <button id="generate-btn">Generate Book</button>
+    </div>
+
+    <div id="error-message" class="error-message"></div>
+
+    <div id="book-content" class="book-content" style="display: none;">
+        <h2>Generated Book Content</h2>
+        <div id="book-structure"></div>
+    </div>
+
+    <div id="download-buttons" style="display: none;">
+        <button id="download-txt">Download as Text</button>
+        <button id="download-pdf">Download as PDF</button>
+    </div>
+
+    <div id="generation-stats" class="generation-stats"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const generateBtn = document.getElementById('generate-btn');
+        const topicTextarea = document.getElementById('topic');
+        const errorMessage = document.getElementById('error-message');
+        const bookContent = document.getElementById('book-content');
+        const bookStructure = document.getElementById('book-structure');
+        const downloadButtons = document.getElementById('download-buttons');
+        const downloadTxtBtn = document.getElementById('download-txt');
+        const downloadPdfBtn = document.getElementById('download-pdf');
+        const generationStats = document.getElementById('generation-stats');
+
+        generateBtn.addEventListener('click', async () => {
+            const topic = topicTextarea.value.trim();
+            if (topic.length < 10) {
+                errorMessage.textContent = 'Book topic must be at least 10 characters long';
+                return;
+            }
+
+            errorMessage.textContent = '';
+            generateBtn.disabled = true;
+            generateBtn.textContent = 'Generating...';
+            bookContent.style.display = 'none';
+            downloadButtons.style.display = 'none';
+
+            try {
+                const response = await fetch('/generate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: `topic=${encodeURIComponent(topic)}`
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    generationStats.innerHTML = data.stats;
+                    await generateBookContent(data.structure);
+                    bookContent.style.display = 'block';
+                    downloadButtons.style.display = 'block';
+                } else {
+                    throw new Error(data.error || 'An error occurred while generating the book structure.');
+                }
+            } catch (error) {
+                errorMessage.textContent = error.message;
+            } finally {
+                generateBtn.disabled = false;
+                generateBtn.textContent = 'Generate Book';
+            }
+        });
+
+        async function generateBookContent(structure) {
+            bookStructure.innerHTML = '';
+            const content = await generateSections(structure);
+            updateDownloadButtons(content);
+        }
+
+        async function generateSections(sections, level = 2) {
+            let content = '';
+            for (const [title, description] of Object.entries(sections)) {
+                const sectionElement = document.createElement('div');
+                sectionElement.classList.add('book-section');
+                sectionElement.innerHTML = `<h${level}>${title}</h${level}><div class="section-content"></div>`;
+                bookStructure.appendChild(sectionElement);
+
+                if (typeof description === 'string') {
+                    const sectionContent = await generateSection(title, description);
+                    sectionElement.querySelector('.section-content').innerHTML = sectionContent;
+                    content += `${'#'.repeat(level)} ${title}\n\n${sectionContent}\n\n`;
+                } else if (typeof description === 'object') {
+                    content += `${'#'.repeat(level)} ${title}\n\n`;
+                    content += await generateSections(description, level + 1);
+                }
+            }
+            return content;
+        }
+
+        async function generateSection(title, description) {
+            const response = await fetch('/generate_section', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `title=${encodeURIComponent(title)}&description=${encodeURIComponent(description)}`
+            });
+
+            const data = await response.json();
+            return data.content;
+        }
+
+        function updateDownloadButtons(content) {
+            downloadTxtBtn.onclick = () => {
+                window.location.href = `/download/txt?content=${encodeURIComponent(content)}`;
+            };
+
+            downloadPdfBtn.onclick = () => {
+                window.location.href = `/download/pdf?content=${encodeURIComponent(content)}`;
+            };
+        }
+    });
+</script>
+{% endblock %}
